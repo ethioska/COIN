@@ -1,0 +1,344 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Telegram HD 2D MiniGames — Single File</title>
+  <style>
+    :root{--bg:#0b1220;--panel:rgba(255,255,255,0.03);--accent:#ffb86b;--muted:#98a0b3}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#07101a,#081224);color:#e6eef8;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial}
+    #app{height:100%;display:flex;flex-direction:column}
+    header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);backdrop-filter:blur(6px)}
+    header h1{font-size:15px;margin:0;letter-spacing:0.2px}
+    .controls{display:flex;gap:8px;align-items:center}
+    select,button{appearance:none;border:1px solid rgba(255,255,255,0.04);background:var(--panel);color:inherit;padding:8px 10px;border-radius:10px;font-size:14px}
+    button.primary{background:linear-gradient(180deg,var(--accent),#ff9e3a);color:#08101a;font-weight:600}
+    #main{flex:1;display:grid;grid-template-columns: 1fr 360px;gap:12px;padding:10px}
+    .stage{position:relative;border-radius:12px;overflow:hidden;background:linear-gradient(180deg,#07101a 0%, #06121a 100%);box-shadow:0 10px 40px rgba(2,6,23,0.7)}
+    canvas{display:block;width:100%;height:100%}
+    .panel{padding:12px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);color:#dfe7f5}
+    .panel h2{font-size:15px;margin:0 0 8px}
+    .row{display:flex;gap:8px;margin-bottom:8px}
+    .muted{color:var(--muted);font-size:13px}
+    .hud{position:absolute;left:12px;top:12px;z-index:40;background:rgba(0,0,0,0.25);padding:8px;border-radius:10px}
+    .overlay{position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);z-index:50;background:linear-gradient(180deg,rgba(0,0,0,0.5),rgba(255,255,255,0.02));padding:18px;border-radius:10px;text-align:center;display:none}
+    .small{font-size:13px;color:var(--muted)}
+    footer{padding:10px 14px;color:var(--muted);font-size:13px}
+    @media(max-width:900px){#main{grid-template-columns:1fr} .panel{order:2}}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Telegram HD 2D MiniGames — Non-3D, Lightweight</h1>
+      <div class="controls">
+        <select id="gameSelect">
+          <option value="chicken">Chicken Road — HD 2D</option>
+          <option value="aviator">Mini Aviator</option>
+          <option value="spinner">Spinner Jackpot</option>
+          <option value="snake">Snake Royale</option>
+          <option value="bottle">Bottle Flip</option>
+          <option value="jump">Jump Dash</option>
+        </select>
+        <button id="startBtn" class="primary">Start</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </header><div id="main">
+  <div class="stage panel" id="stageWrap" style="min-height:420px">
+    <div class="hud" id="hud">Coins: 0</div>
+    <canvas id="gameCanvas"></canvas>
+    <div class="overlay" id="overlay"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Game Info</h2>
+    <div id="gameInfo" class="small">Choose a game and press Start. These games are built to run in Telegram WebApp or in any modern browser. They purposely avoid cartoon styling and aim for a clean HD look.</div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.02)">
+    <div class="row">
+      <div style="flex:1"><strong id="scoreLabel">Score: 0</strong><div class="small">Best local scores stored</div></div>
+    </div>
+    <div style="margin-top:10px">
+      <button id="walletBtn">Open Wallet</button>
+      <div class="small" style="margin-top:8px">Local coins: <span id="coinsDisplay">0</span></div>
+    </div>
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.02)">
+    <div>
+      <strong>How to publish</strong>
+      <div class="small">Save this file as <code>index.html</code> and push to GitHub. Enable GitHub Pages from the repo settings (branch: main, folder: /root). Use the generated HTTPS URL in your Telegram bot WebApp settings.</div>
+    </div>
+  </div>
+</div>
+
+<footer>Designed to be non-cartoon, sharp/modern 2D — works offline, single HTML file.</footer>
+
+  </div><script>
+/* ---------------------- Utilities & state ----------------------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W = 1280, H = 720;
+function resizeCanvas(){
+  const rect = document.getElementById('stageWrap').getBoundingClientRect();
+  W = Math.max(360, Math.floor(rect.width)); H = Math.max(300, Math.floor(window.innerHeight - 180));
+  canvas.width = Math.floor(W * devicePixelRatio); canvas.height = Math.floor(H * devicePixelRatio);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+const state = {
+  coins: Number(localStorage.getItem('tg2_coins')||0),
+  leaderboards: JSON.parse(localStorage.getItem('tg2_leaderboards')||'{}')
+};
+function saveState(){ localStorage.setItem('tg2_coins', String(state.coins)); localStorage.setItem('tg2_leaderboards', JSON.stringify(state.leaderboards)); }
+
+const hud = document.getElementById('hud'); const overlay = document.getElementById('overlay'); const scoreLabel = document.getElementById('scoreLabel'); const coinsDisplay = document.getElementById('coinsDisplay');
+coinsDisplay.innerText = state.coins;
+
+/* ---------------------- Visual helpers (non-cartoon HD look) ----------------------- */
+function roundRect(ctx,x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function drawGlassCard(x,y,w,h, radius){ ctx.save(); roundRect(ctx,x,y,w,h,radius); ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fill(); ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.stroke(); ctx.restore(); }
+function radialGradientRect(x,y,w,h, c1, c2){ const g = ctx.createLinearGradient(x,y,x+w,y+h); g.addColorStop(0,c1); g.addColorStop(1,c2); ctx.fillStyle = g; ctx.fillRect(x,y,w,h); }
+
+/* subtle noise texture for HD realism */
+let noiseCanvas = null;
+function makeNoise(){ noiseCanvas = document.createElement('canvas'); noiseCanvas.width = 256; noiseCanvas.height = 256; const nctx = noiseCanvas.getContext('2d'); const img = nctx.createImageData(256,256); for(let i=0;i<img.data.length;i+=4){ const v = 230 + Math.floor(Math.random()*25); img.data[i]=v; img.data[i+1]=v; img.data[i+2]=v; img.data[i+3]=Math.floor(Math.random()*22); } nctx.putImageData(img,0,0); }
+makeNoise();
+
+/* ---------------------- Input handling ----------------------- */
+const input = {left:false,right:false,up:false,down:false,tap:false};
+window.addEventListener('keydown', (e)=>{ if(e.key==='ArrowLeft') input.left=true; if(e.key==='ArrowRight') input.right=true; if(e.key==='ArrowUp') input.up=true; if(e.key==='ArrowDown') input.down=true; if(e.key==='r' || e.key==='R') if(currentGame && currentGame.restart) currentGame.restart(); });
+window.addEventListener('keyup', (e)=>{ if(e.key==='ArrowLeft') input.left=false; if(e.key==='ArrowRight') input.right=false; if(e.key==='ArrowUp') input.up=false; if(e.key==='ArrowDown') input.down=false; });
+canvas.addEventListener('touchstart', (e)=>{ const t = e.touches[0]; input.tap = {x:t.clientX - canvas.getBoundingClientRect().left, y:t.clientY - canvas.getBoundingClientRect().top}; });
+canvas.addEventListener('touchend', ()=>{ input.tap=false; });
+canvas.addEventListener('mousedown', (e)=>{ input.tap = {x:e.offsetX, y:e.offsetY}; setTimeout(()=>input.tap=false,150); });
+
+/* ---------------------- Game base class ----------------------- */
+class GameBase{ constructor(){ this.running=true; this.score=0; this.best = (localStorage.getItem('best_'+this.name)||0); }
+  tick(dt){}
+  draw(){ /* override */ }
+  end(){ this.running=false; }
+  restart(){ this.init(); }
+}
+
+/* ---------------------- Chicken Road 2D (Top-down HD look) ----------------------- */
+class ChickenRoad2D extends GameBase{
+  constructor(){ super(); this.name='chicken'; this.init(); }
+  init(){ this.running=true; this.score=0; this.player={x:W/2,y:H-140,w:34,h:34}; this.lanes=6; this.carList=[]; this.coins=[]; this.spawnT=0; this.speedMult=1; overlay.style.display='none'; }
+  makeCar(){ const laneIndex = Math.floor(Math.random()*this.lanes); const laneY = H - 140 - laneIndex*60; const dir = Math.random()<0.5? -1:1; const speed = 120 + Math.random()*160; const w = 60 + Math.random()*80; const car = {x: dir<0 ? -w : W + w, y: laneY, w: w, h:34, speed: speed*dir, color: ['#2b3b4f','#334656','#4b5b6d'][Math.floor(Math.random()*3)]}; this.carList.push(car); }
+  makeCoin(){ const cx = 80 + Math.random()*(W-160); const cy = 80 + Math.random()*(H-260); this.coins.push({x:cx,y:cy,r:10,angle:0}); }
+  update(dt){ if(!this.running) return; this.spawnT += dt; if(this.spawnT>0.9 - Math.min(0.6,this.score*0.005)){ this.makeCar(); this.spawnT=0; }
+    if(Math.random()<0.01) this.makeCoin();
+    // move cars
+    for(let i=this.carList.length-1;i>=0;i--){ const c=this.carList[i]; c.x += c.speed*dt*this.speedMult; if(c.x < -200 || c.x > W+200) this.carList.splice(i,1);
+      // collision
+      if(Math.abs((c.x + c.w/2) - (this.player.x + this.player.w/2)) < (c.w/2 + this.player.w/2 -6) && Math.abs(c.y - this.player.y) < 28){ this.running=false; overlay.innerHTML = '<div style="font-size:20px;font-weight:700">You crashed</div><div class="small">Press R to retry</div>'; overlay.style.display='block'; this.saveScore(); }
+    }
+    // coins
+    for(let i=this.coins.length-1;i>=0;i--){ const co=this.coins[i]; co.angle += dt*6; if(Math.hypot(co.x - (this.player.x+this.player.w/2), co.y - (this.player.y+this.player.h/2)) < 28){ this.coins.splice(i,1); this.score += 8; state.coins += 1; saveState(); coinsDisplay.innerText = state.coins; } }
+    // player movement
+    const mv = 220*dt; if(input.left) this.player.x -= mv; if(input.right) this.player.x += mv; if(input.up) this.player.y -= mv; if(input.down) this.player.y += mv;
+    // clamp
+    this.player.x = Math.max(24, Math.min(W - 24 - this.player.w, this.player.x)); this.player.y = Math.max(60, Math.min(H-60, this.player.y));
+    // progress score for reaching top
+    if(this.player.y < 120){ this.score += 10; this.player.y = H - 140; this.speedMult += 0.06; }
+  }
+  draw(){ // background road
+    // gradient sky
+    const g = ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#0a1720'); g.addColorStop(1,'#07121a'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+    // subtle noise
+    ctx.save(); ctx.globalAlpha = 0.04; ctx.drawImage(noiseCanvas,0,0,W,H); ctx.restore();
+
+    // lanes
+    const laneH = 60; const baseY = H - 140; for(let i=0;i<this.lanes;i++){ const y = baseY - i*laneH; // road strip
+      ctx.fillStyle = '#14181d'; ctx.fillRect(0,y-28,W,56);
+      // dashed line
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 3; ctx.setLineDash([24,18]); ctx.beginPath(); ctx.moveTo(20,y); ctx.lineTo(W-20,y); ctx.stroke(); ctx.setLineDash([]);
+    }
+    // coins
+    for(const co of this.coins){ ctx.save(); ctx.translate(co.x,co.y); ctx.rotate(co.angle); const rg = ctx.createLinearGradient(-8,-8,8,8); rg.addColorStop(0,'#fff3b0'); rg.addColorStop(1,'#ffd700'); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0,0,co.r,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+
+    // cars
+    for(const c of this.carList){ // metallic-ish car
+      const rg = ctx.createLinearGradient(c.x, c.y-20, c.x + c.w, c.y+20); rg.addColorStop(0,'#1f2933'); rg.addColorStop(0.5,c.color); rg.addColorStop(1,'#0b1116'); ctx.fillStyle = rg; roundRect(ctx, c.x, c.y-16, c.w, 32, 8); ctx.fill();
+      // windows
+      ctx.fillStyle = 'rgba(255,255,255,0.12)'; roundRect(ctx, c.x + c.w*0.12, c.y-8, c.w*0.5, 16, 4); ctx.fill();
+      // wheels
+      ctx.fillStyle = '#081014'; ctx.beginPath(); ctx.arc(c.x + c.w*0.18, c.y+14, 8,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(c.x + c.w*0.82, c.y+14, 8,0,Math.PI*2); ctx.fill();
+    }
+
+    // player (non-cartoon 'chicken' as sleek silhouette with subtle texture)
+    ctx.save(); const px=this.player.x, py=this.player.y; const w=this.player.w, h=this.player.h;
+    // body
+    const bodyGrad = ctx.createLinearGradient(px,py-20,px+w,py+h); bodyGrad.addColorStop(0,'#ffd9a8'); bodyGrad.addColorStop(1,'#ffb86b'); ctx.fillStyle = bodyGrad; ctx.beginPath(); ctx.ellipse(px + w/2, py + h/2, w/2, h/2, 0, 0, Math.PI*2); ctx.fill();
+    // beak - simple triangle
+    ctx.fillStyle = '#ff8b00'; ctx.beginPath(); ctx.moveTo(px + w*0.9, py + h/2); ctx.lineTo(px + w*1.12, py + h*0.45); ctx.lineTo(px + w*0.9, py + h*0.4); ctx.fill();
+    // eye
+    ctx.fillStyle = '#08101a'; ctx.beginPath(); ctx.arc(px + w*0.48, py + h*0.35, 3,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+
+    // HUD
+    ctx.fillStyle='rgba(0,0,0,0.28)'; roundRect(ctx,12,12,140,40,8); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='600 14px system-ui'; ctx.fillText('Score: '+this.score, 22, 36);
+    scoreLabel.innerText = 'Score: '+this.score;
+  }
+  saveScore(){ state.leaderboards.chicken = state.leaderboards.chicken || []; state.leaderboards.chicken.push({score:this.score, date: new Date().toISOString()}); state.leaderboards.chicken.sort((a,b)=>b.score-a.score); state.leaderboards.chicken = state.leaderboards.chicken.slice(0,10); saveState(); }
+}
+
+/* ---------------------- Mini Aviator 2D ----------------------- */
+class MiniAviator2D extends GameBase{
+  constructor(){ super(); this.name='aviator'; this.init(); }
+  init(){ this.running=false; this.mult=1; this.crashed=false; overlay.style.display='none'; this.lastTick=0; }
+  startRun(){ this.running=true; this.crashed=false; this.mult=1; this.startT=performance.now(); overlay.style.display='none'; }
+  cashOut(){ if(!this.running) return; this.running=false; const win = Math.floor(this.mult*10); state.coins += win; saveState(); coinsDisplay.innerText = state.coins; overlay.innerHTML = `<div style="font-weight:700">Cashed out x${this.mult.toFixed(2)}</div><div class="small">+${win} coins</div>`; overlay.style.display='block'; }
+  update(dt){ if(!this.running) return; // grow multiplier
+    this.mult += dt * (0.7 + this.mult*0.12);
+    // crash chance increases with time
+    const crashP = Math.min(0.0008 + this.mult*0.0007, 0.12);
+    if(Math.random() < crashP * dt * 60){ this.running=false; this.crashed=true; overlay.innerHTML = `<div style="font-weight:800;color:#ff7a7a">Crashed at x${this.mult.toFixed(2)}</div><div class="small">Try again</div>`; overlay.style.display='block'; }
+  }
+  draw(){ // background sky gradient
+    const g = ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#071624'); g.addColorStop(1,'#052033'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // plane path
+    ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fillRect(40,H-160,W-80,120);
+    // multiplier dial
+    ctx.fillStyle='#fff'; ctx.font='700 44px system-ui'; ctx.fillText(this.mult.toFixed(2)+'x', 44, 84);
+
+    // progress bar
+    ctx.fillStyle='rgba(255,255,255,0.04)'; roundRect(ctx,44,104,W-88,28,8); ctx.fill();
+    const pct = Math.min(1, Math.log10(this.mult+1)/3);
+    const barW = (W-88) * pct; const rg = ctx.createLinearGradient(44,0,44+barW,0); rg.addColorStop(0,'#ffd27f'); rg.addColorStop(1,'#ff8b00'); ctx.fillStyle = rg; roundRect(ctx,44,104,barW,28,8); ctx.fill();
+
+    // buttons hint
+    ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.font='600 14px system-ui'; ctx.fillText('Click canvas to Start / Cashout', 44, H-40);
+  }
+}
+
+/* ---------------------- Spinner Jackpot 2D ----------------------- */
+class Spinner2D extends GameBase{
+  constructor(){ super(); this.name='spinner'; this.init(); }
+  init(){ this.running=false; this.angle=0; this.speed=0; this.segs=8; overlay.style.display='none'; }
+  spin(){ if(this.speed>0.1) return; this.speed = 0.6 + Math.random()*1.2; overlay.style.display='none'; }
+  update(dt){ if(this.speed>0.001){ this.angle += this.speed; this.speed *= 0.992; if(this.speed<0.002){ this.speed=0; // landed
+        const idx = Math.floor(((this.angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2) / (Math.PI*2/this.segs)); const reward = ((this.segs - idx) % this.segs) + 1; state.coins += reward; saveState(); coinsDisplay.innerText = state.coins; overlay.innerHTML = `<div style="font-weight:800">You won ${reward} coins</div>`; overlay.style.display='block'; } } }
+  draw(){ // background
+    ctx.fillStyle='#081220'; ctx.fillRect(0,0,W,H);
+    // wheel center
+    const cx = W/2, cy = H/2 - 20, r = Math.min(W,H)/4;
+    for(let i=0;i<this.segs;i++){ const a1 = i*(Math.PI*2/this.segs)+this.angle; const a2 = (i+1)*(Math.PI*2/this.segs)+this.angle; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a1,a2); ctx.closePath(); const hue = 200 + i*(24); const g = ctx.createLinearGradient(cx + Math.cos((a1+a2)/2)*10,cy + Math.sin((a1+a2)/2)*10, cx - Math.cos((a1+a2)/2)*10, cy - Math.sin((a1+a2)/2)*10); g.addColorStop(0,'hsl('+hue+' 70% 45%)'); g.addColorStop(1,'hsl('+ (hue+20) +' 60% 35%)'); ctx.fillStyle = g; ctx.fill(); ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=2; ctx.stroke();
+      // labels
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate((a1+a2)/2); ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='600 14px system-ui'; ctx.fillText(String(((i+1))), r*0.65, 6); ctx.restore(); }
+    // pointer
+    ctx.fillStyle='#ffcf8b'; ctx.beginPath(); ctx.moveTo(cx, cy-r-20); ctx.lineTo(cx-14, cy-r+8); ctx.lineTo(cx+14, cy-r+8); ctx.fill();
+    ctx.font='600 16px system-ui'; ctx.fillStyle='#fff'; ctx.fillText('Spinner', 20, 40);
+  }
+}
+
+/* ---------------------- Snake Royale 2D ----------------------- */
+class Snake2D extends GameBase{
+  constructor(){ super(); this.name='snake'; this.init(); }
+  init(){ this.grid=24; this.cell= Math.max(14, Math.floor(Math.min(W,H)/this.grid)); this.cols = Math.floor(W/this.cell); this.rows = Math.floor(H/this.cell); this.snake=[{x:Math.floor(this.cols/2), y:Math.floor(this.rows/2)}]; this.dir={x:1,y:0}; this.food=this.spawnFood(); this.timer=0; this.speed=0.12; overlay.style.display='none'; }
+  spawnFood(){ return {x: Math.floor(Math.random()*this.cols), y: Math.floor(Math.random()*this.rows)} }
+  update(dt){ this.timer += dt; if(this.timer>this.speed){ this.timer=0; const head = {x:this.snake[0].x + this.dir.x, y:this.snake[0].y + this.dir.y}; if(head.x<0) head.x=this.cols-1; if(head.x>=this.cols) head.x=0; if(head.y<0) head.y=this.rows-1; if(head.y>=this.rows) head.y=0; // collision
+      for(let i=0;i<this.snake.length;i++){ if(this.snake[i].x===head.x && this.snake[i].y===head.y){ this.running=false; overlay.innerHTML = '<div style="font-weight:800">Game Over</div><div class="small">Press R to restart</div>'; overlay.style.display='block'; return; } }
+      this.snake.unshift(head);
+      if(head.x===this.food.x && head.y===this.food.y){ this.food=this.spawnFood(); state.coins+=1; saveState(); coinsDisplay.innerText = state.coins; } else this.snake.pop(); }
+  }
+  draw(){ ctx.fillStyle='#071522'; ctx.fillRect(0,0,W,H); // grid background
+    // draw food
+    ctx.fillStyle='#f25f5c'; const fx = this.food.x*this.cell + this.cell*0.15, fy = this.food.y*this.cell + this.cell*0.15; roundRect(ctx, fx, fy, this.cell*0.7, this.cell*0.7, 6); ctx.fill();
+    // draw snake
+    for(let i=0;i<this.snake.length;i++){ const s=this.snake[i]; const x=s.x*this.cell+2, y=s.y*this.cell+2; const t = 1 - (i/Math.max(1,this.snake.length)); const rg = ctx.createLinearGradient(x,y,x+this.cell,y+this.cell); rg.addColorStop(0,'#bfe6c7'); rg.addColorStop(1,'#7fbf9a'); ctx.fillStyle=rg; roundRect(ctx,x,y,this.cell-4,this.cell-4,6); ctx.fill(); }
+    ctx.fillStyle='#fff'; ctx.font='600 14px system-ui'; ctx.fillText('Snake', 18, 34);
+  }
+}
+
+/* ---------------------- Bottle Flip 2D ----------------------- */
+class BottleFlip2D extends GameBase{
+  constructor(){ super(); this.name='bottle'; this.init(); }
+  init(){ this.x = W/2; this.y = H - 120; this.vy=0; this.ang=0; this.vang=0; this.state='idle'; overlay.style.display='none'; }
+  flip(){ if(this.state!=='idle') return; this.vy = -10 - Math.random()*6; this.vang = (Math.random()*8 + 4) * (Math.random()<0.5? -1:1); this.state='flying'; }
+  update(dt){ if(this.state==='flying'){ this.vy += 24*dt; this.y += this.vy; this.ang += this.vang * dt;
+      if(this.y >= H - 120){ // landed
+        this.y = H - 120; const a = Math.abs((this.ang % (Math.PI*2))); if(a < 0.6 || a > (Math.PI*2 - 0.6)){ overlay.innerHTML = '<div style="font-weight:800">Nice!</div><div class="small">+3 coins</div>'; overlay.style.display='block'; state.coins += 3; saveState(); coinsDisplay.innerText = state.coins; } else { overlay.innerHTML = '<div style="font-weight:700">Failed</div>'; overlay.style.display='block'; }
+        this.state='idle'; this.vy=0; this.vang=0; this.ang=0;
+      }
+    }
+  }
+  draw(){ ctx.fillStyle='#081422'; ctx.fillRect(0,0,W,H);
+    // table
+    ctx.fillStyle='#0b1320'; ctx.fillRect(0,H-160,W,160);
+    // bottle body (rounded rectangle)
+    ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.ang); const bw=36, bh=120; roundRect(ctx, -bw/2, -bh, bw, bh, 20); const rg = ctx.createLinearGradient(-bw/2, -bh, bw/2, 0); rg.addColorStop(0,'#d6f3ff'); rg.addColorStop(1,'#6fb8d6'); ctx.fillStyle = rg; ctx.fill(); // cap
+    ctx.fillStyle='#08303a'; roundRect(ctx, -bw/2, -bh-10, bw, 12, 6); ctx.fill(); ctx.restore();
+    ctx.fillStyle='#fff'; ctx.font='600 16px system-ui'; ctx.fillText('Bottle Flip', 18, 36);
+  }
+}
+
+/* ---------------------- Jump Dash 2D ----------------------- */
+class JumpDash2D extends GameBase{
+  constructor(){ super(); this.name='jump'; this.init(); }
+  init(){ this.player = {x:W/2,y:H-140,w:28,h:32,vy:0}; this.platforms=[]; this.spawnInitial(); this.score=0; overlay.style.display='none'; }
+  spawnInitial(){ this.platforms = []; let y = H - 120; for(let i=0;i<10;i++){ this.platforms.push({x: Math.random()*(W-160)+80, y: y}); y -= 120; } }
+  update(dt){ // gravity
+    this.player.vy += 24*dt; this.player.y += this.player.vy; if(this.player.y > H - 60){ this.player.y = H - 60; this.player.vy = -10; }
+    // land on platforms
+    for(const p of this.platforms){ if(this.player.vy > 0 && this.player.x + this.player.w/2 > p.x - 60 && this.player.x + this.player.w/2 < p.x + 60 && Math.abs((this.player.y + this.player.h) - p.y) < 18){ this.player.vy = -12; this.score += 10; } }
+    // move player with input
+    if(input.left) this.player.x -= 240*dt; if(input.right) this.player.x += 240*dt; if(this.player.x < 0) this.player.x = W; if(this.player.x > W) this.player.x = 0;
+    // move platforms down when player high
+    if(this.player.y < H/2){ const dy = H/2 - this.player.y; this.player.y += dy*0.02; for(const p of this.platforms){ p.y += dy*0.02; } // spawn new
+      while(this.platforms.length && this.platforms[0].y > H+80) this.platforms.shift(); while(this.platforms.length < 10){ this.platforms.push({x: Math.random()*(W-160)+80, y: this.platforms[this.platforms.length-1].y - 120}); } }
+  }
+  draw(){ ctx.fillStyle='#071424'; ctx.fillRect(0,0,W,H);
+    // platforms
+    for(const p of this.platforms){ ctx.fillStyle='#153246'; roundRect(ctx, p.x-60, p.y-12, 120, 16, 8); ctx.fill(); }
+    // player
+    const px = this.player.x, py = this.player.y; const w=this.player.w, h=this.player.h;
+    const rg = ctx.createLinearGradient(px,py,px+w,py+h); rg.addColorStop(0,'#ffdca0'); rg.addColorStop(1,'#ffae5a'); ctx.fillStyle = rg; roundRect(ctx, px, py - h, w, h, 6); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='600 16px system-ui'; ctx.fillText('Jump Dash', 18, 36);
+    scoreLabel.innerText = 'Score: '+this.score;
+  }
+}
+
+/* ---------------------- Game manager ----------------------- */
+const games = {
+  chicken: ChickenRoad2D,
+  aviator: MiniAviator2D,
+  spinner: Spinner2D,
+  snake: Snake2D,
+  bottle: BottleFlip2D,
+  jump: JumpDash2D
+};
+let currentGame = null;
+let lastTime = performance.now();
+
+function startSelected(){ const id = document.getElementById('gameSelect').value; if(currentGame && currentGame.name === id){ // restart
+    currentGame.restart(); return; }
+  currentGame = new games[id](); resizeCanvas(); lastTime = performance.now(); overlay.style.display='none'; }
+
+document.getElementById('startBtn').addEventListener('click', ()=>{ startSelected(); if(currentGame && currentGame.name==='aviator'){ currentGame.startRun(); } });
+
+document.getElementById('gameCanvas').addEventListener('click', (e)=>{ if(!currentGame) return; if(currentGame.name==='aviator'){ if(currentGame.running) currentGame.cashOut(); else currentGame.startRun(); } else if(currentGame.name==='spinner'){ currentGame.spin(); } else if(currentGame.name==='bottle'){ currentGame.flip(); } });
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{ if(confirm('Reset local coins and leaderboards?')){ state.coins=0; state.leaderboards={}; saveState(); coinsDisplay.innerText = 0; alert('Reset done'); } });
+
+document.getElementById('walletBtn').addEventListener('click', ()=>{ alert('Wallet — coins: '+state.coins+'\nLocal leaderboards stored in localStorage'); });
+
+// simple input for snake direction
+window.addEventListener('keydown', (e)=>{ if(!currentGame) return; if(currentGame.name==='snake'){ if(e.key==='ArrowLeft') currentGame.dir = {x:-1,y:0}; if(e.key==='ArrowRight') currentGame.dir = {x:1,y:0}; if(e.key==='ArrowUp') currentGame.dir = {x:0,y:-1}; if(e.key==='ArrowDown') currentGame.dir = {x:0,y:1}; } });
+
+function loop(){ const now = performance.now(); const dt = Math.min(0.05, (now - lastTime)/1000); lastTime = now; if(currentGame){ currentGame.update(dt); currentGame.draw(); } else { // idle screen
+    ctx.fillStyle='#071424'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.font='700 34px system-ui'; ctx.fillText('Ready — choose a game and press Start', 40, 120); ctx.font='600 14px system-ui'; ctx.fillText('Click on the canvas for in-game actions (tap on mobile)', 40, 160); }
+  hud.innerText = 'Coins: ' + state.coins; scoreLabel.innerText = 'Score: ' + (currentGame? currentGame.score: 0); requestAnimationFrame(loop); }
+
+resizeCanvas(); loop();
+
+// expose restart via R
+window.addEventListener('keydown', (e)=>{ if(e.key==='r' || e.key==='R'){ if(currentGame && currentGame.restart) currentGame.restart(); } });
+
+// Telegram WebApp friendly
+if(window.Telegram && window.Telegram.WebApp){ try{ window.Telegram.WebApp.expand(); }catch(e){} }
+
+</script></body>
+</html>
